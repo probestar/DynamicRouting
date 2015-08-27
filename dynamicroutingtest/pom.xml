@@ -32,16 +32,28 @@
 	<build>
 		<plugins>
 			<plugin>
+				<!-- mvn assembly:single -->
 				<groupId>org.apache.maven.plugins</groupId>
-				<artifactId>maven-jar-plugin</artifactId>
+				<artifactId>maven-assembly-plugin</artifactId>
 				<configuration>
+					<descriptorRefs>
+						<descriptorRef>jar-with-dependencies</descriptorRef>
+					</descriptorRefs>
 					<archive>
 						<manifest>
-							<addClasspath>true</addClasspath>
-							<mainClass>com.probestar.dymanicrouting.DynamicRoutingTest</mainClass>
+							<mainClass>com.probestar.dynamicroutingtest.DynamicRoutingTest</mainClass>
 						</manifest>
 					</archive>
 				</configuration>
+				<executions>  <!-- 这部分配置只是为了把任务绑定到 package -->
+					<execution>
+						<id>make-assembly</id>
+						<phase>package</phase>
+						<goals>
+							<goal>single</goal>
+						</goals>
+					</execution>
+				</executions>
 			</plugin>
 		</plugins>
 	</build>

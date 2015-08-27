@@ -34,12 +34,13 @@ public class DynamicRoutingTest {
 			String password = map.get("Password");
 
 			RoutingModel model = new RoutingModel();
-			model.setKey("probestar.1");
+			model.setKey("probestar.2");
 			model.setUrl("ps://www.probestar.com/1");
 
 			DynamicRouting.initialize(conn, userName, password);
+			Thread.sleep(1000);
 			DynamicRouting.getInstance().register(model);
-			
+
 			synchronized (DynamicRoutingTest.class) {
 				DynamicRoutingTest.class.wait();
 			}

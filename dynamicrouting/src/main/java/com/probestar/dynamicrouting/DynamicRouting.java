@@ -17,6 +17,7 @@
 package com.probestar.dynamicrouting;
 
 import java.nio.charset.Charset;
+import java.util.HashMap;
 
 import org.apache.zookeeper.KeeperException;
 
@@ -30,8 +31,9 @@ public class DynamicRouting implements ZKConnectionEvent {
 	private static PSTracer _tracer = PSTracer.getInstance(DynamicRouting.class);
 	private static DynamicRouting _instance;
 
-	private ZKConnection _zk;
 	private Gson _gson;
+	private HashMap<String, RoutingModel> _models;
+	private ZKConnection _zk;
 
 	public static void initialize(String conn, String userName, String password) {
 		try {
@@ -48,17 +50,20 @@ public class DynamicRouting implements ZKConnectionEvent {
 	}
 
 	private DynamicRouting(String conn, String userName, String password) {
+		_gson = new Gson();
+		_models = new HashMap<>();
 		_zk = new ZKConnection(conn, userName, password);
 		_zk.register(this);
-		_gson = new Gson();
 	}
 
 	public void register(RoutingModel model) throws InterruptedException {
 		_zk.createTemp(model.getKey(), model2Bytes(model));
+		_tracer.info("RouteModel has been registered.\r\n" + model.toString());
 	}
 
 	public void deregister(String key) throws InterruptedException, KeeperException {
 		_zk.delete(key);
+		_tracer.info("RoutingModel has been deregistered. Key: " + key);
 	}
 
 	private byte[] model2Bytes(RoutingModel model) {
@@ -66,8 +71,18 @@ public class DynamicRouting implements ZKConnectionEvent {
 		return json.getBytes(Charset.forName("utf-8"));
 	}
 
+	private RoutingModel bytes2Model(byte[] data) {
+		String json = new String(data, Charset.forName("utf-8"));
+		return _gson.fromJson(json, RoutingModel.class);
+	}
+
 	@Override
 	public void onNodeChanged(byte[] data) {
-		_tracer.info("Got data:" + PSConvert.bytes2HexString(data));
+		_tracer.info("Got data: " + PSConvert.bytes2HexString(data));
+		RoutingModel model = bytes2Model(data);
+		_tracer.info("Got RoutingModel: " + model.toString());
+		synchronized (_models) {
+			_models.put(model.getKey(), model);
+		}
 	}
 }
