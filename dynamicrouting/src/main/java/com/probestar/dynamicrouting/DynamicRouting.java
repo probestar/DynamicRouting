@@ -17,9 +17,8 @@
 package com.probestar.dynamicrouting;
 
 import java.nio.charset.Charset;
+import java.util.ArrayList;
 import java.util.HashMap;
-
-import org.apache.zookeeper.KeeperException;
 
 import com.google.gson.Gson;
 import com.probestar.dynamicrouting.zk.ZKConnection;
@@ -31,7 +30,9 @@ public class DynamicRouting implements ZKConnectionEvent {
 	private static PSTracer _tracer = PSTracer.getInstance(DynamicRouting.class);
 	private static DynamicRouting _instance;
 
+	private boolean _isConnected;
 	private Gson _gson;
+	private ArrayList<RoutingModel> _myModels;
 	private HashMap<String, RoutingModel> _models;
 	private ZKConnection _zk;
 
@@ -50,20 +51,32 @@ public class DynamicRouting implements ZKConnectionEvent {
 	}
 
 	private DynamicRouting(String conn, String userName, String password) {
+		_isConnected = false;
 		_gson = new Gson();
+		_myModels = new ArrayList<RoutingModel>();
 		_models = new HashMap<>();
 		_zk = new ZKConnection(conn, userName, password);
 		_zk.register(this);
 	}
 
-	public void register(RoutingModel model) throws InterruptedException {
-		_zk.createTemp(model.getKey(), model2Bytes(model));
-		_tracer.info("RouteModel has been registered.\r\n" + model.toString());
+	public synchronized void register(RoutingModel model) throws InterruptedException {
+		if (_isConnected)
+			innerRegister(model);
+		else
+			_myModels.add(model);
 	}
 
-	public void deregister(String key) throws InterruptedException, KeeperException {
-		_zk.delete(key);
-		_tracer.info("RoutingModel has been deregistered. Key: " + key);
+	public RoutingModel getRouting(String key) {
+		return _models.get(key);
+	}
+
+	private void innerRegister(RoutingModel model) {
+		try {
+			_zk.createTempSeq(model.getKey(), model2Bytes(model));
+			_tracer.info("RouteModel has been registered.\r\n" + model.toString());
+		} catch (Throwable t) {
+			_tracer.error("DynamicRouting.onConnected error.", t);
+		}
 	}
 
 	private byte[] model2Bytes(RoutingModel model) {
@@ -77,7 +90,34 @@ public class DynamicRouting implements ZKConnectionEvent {
 	}
 
 	@Override
-	public void onNodeChanged(byte[] data) {
+	public synchronized void onConnected() {
+		_isConnected = true;
+
+		for (RoutingModel model : _myModels)
+			innerRegister(model);
+		if (_myModels.size() == 0) {
+			try {
+				_zk.fireDataChanged();
+			} catch (Throwable t) {
+				_tracer.error("DynamicRouting.onConnected error.", t);
+			}
+		}
+	}
+
+	@Override
+	public synchronized void onDisconnected() {
+		_isConnected = false;
+	}
+
+	@Override
+	public void onDataReset() {
+		synchronized (_models) {
+			_models.clear();
+		}
+	}
+
+	@Override
+	public void onDataChanged(byte[] data) {
 		_tracer.debug("Got data: " + PSConvert.bytes2HexString(data));
 		RoutingModel model = bytes2Model(data);
 		_tracer.info("Got RoutingModel: " + model.toString());
@@ -86,11 +126,4 @@ public class DynamicRouting implements ZKConnectionEvent {
 		}
 	}
 
-	@Override
-	public void onNodeClear() {
-		_tracer.info("Routing clear.");
-		synchronized (_models) {
-			_models.clear();
-		}
-	}
 }

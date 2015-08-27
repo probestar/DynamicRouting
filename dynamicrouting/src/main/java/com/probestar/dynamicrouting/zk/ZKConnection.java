@@ -84,7 +84,7 @@ public class ZKConnection implements Watcher {
 		create(key, data, CreateMode.PERSISTENT);
 	}
 
-	public void createTemp(String key, byte[] data) throws InterruptedException {
+	public void createTempSeq(String key, byte[] data) throws InterruptedException {
 		create(key, data, CreateMode.EPHEMERAL_SEQUENTIAL);
 	}
 
@@ -105,7 +105,7 @@ public class ZKConnection implements Watcher {
 		_tracer.info("Path %s has been deleted.", key);
 	}
 
-	public List<String> list() throws Throwable {
+	public List<String> list() throws KeeperException, InterruptedException {
 		return _zk.getChildren("/", this);
 	}
 
@@ -113,7 +113,7 @@ public class ZKConnection implements Watcher {
 		_zk.setData(getPath(key), value, -1);
 	}
 
-	public byte[] get(String key) throws Throwable {
+	public byte[] get(String key) throws KeeperException, InterruptedException {
 		byte[] b = null;
 		b = _zk.getData(getPath(key), null, null);
 		return b;
@@ -150,21 +150,32 @@ public class ZKConnection implements Watcher {
 		return list;
 	}
 
-	private void fireNodeChanged(String path) throws Throwable {
-		byte[] data = get(path);
-		for (ZKConnectionEvent event : _events)
-			event.onNodeChanged(data);
-	}
-
-	private void fireNodesChanged() throws Throwable {
+	public void fireDataChanged() throws KeeperException, InterruptedException {
+		fireDataReset();
 		List<String> list = list();
 		for (String path : list)
-			fireNodeChanged(path);
+			fireDataChanged(path);
 	}
 
-	private void fireNodeClear() {
+	private void fireConnected() {
 		for (ZKConnectionEvent event : _events)
-			event.onNodeClear();
+			event.onConnected();
+	}
+
+	private void fireDisconnected() {
+		for (ZKConnectionEvent event : _events)
+			event.onDisconnected();
+	}
+
+	private void fireDataReset() {
+		for (ZKConnectionEvent event : _events)
+			event.onDataReset();
+	}
+
+	private void fireDataChanged(String path) throws KeeperException, InterruptedException {
+		byte[] data = get(path);
+		for (ZKConnectionEvent event : _events)
+			event.onDataChanged(data);
 	}
 
 	@Override
@@ -179,19 +190,29 @@ public class ZKConnection implements Watcher {
 			case SyncConnected:
 				switch (event.getType()) {
 				case None:
-					fireNodesChanged();
-					_zk.exists("/", this);
+					list();
+					fireConnected();
 					break;
 				case NodeChildrenChanged:
-					fireNodeClear();
-					fireNodesChanged();
-					_zk.exists("/", this);
+					fireDataChanged();
 					break;
 				default:
+					_tracer.error("Unhandled Event: " + event.toString());
+					break;
+				}
+				break;
+			case Disconnected:
+				switch (event.getType()) {
+				case None:
+					fireDisconnected();
+					break;
+				default:
+					_tracer.error("Unhandled Event: " + event.toString());
 					break;
 				}
 				break;
 			default:
+				_tracer.error("Unhandled Event: " + event.toString());
 				break;
 			}
 

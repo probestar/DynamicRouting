@@ -38,11 +38,15 @@ public class DynamicRoutingTest {
 			model.setUrl("ps://www.probestar.com/1");
 
 			DynamicRouting.initialize(conn, userName, password);
-			Thread.sleep(1000);
 			DynamicRouting.getInstance().register(model);
 
-			synchronized (DynamicRoutingTest.class) {
-				DynamicRoutingTest.class.wait();
+			while (true) {
+				RoutingModel m = DynamicRouting.getInstance().getRouting("probestar.2");
+				if (m == null)
+					_tracer.info("Got nothing.");
+				else
+					_tracer.info("Got Routing: " + m.toString());
+				Thread.sleep(1000);
 			}
 		} catch (Throwable t) {
 			_tracer.error("DynamicRoutingTest.main error.", t);
