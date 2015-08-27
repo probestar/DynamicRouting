@@ -78,11 +78,19 @@ public class DynamicRouting implements ZKConnectionEvent {
 
 	@Override
 	public void onNodeChanged(byte[] data) {
-		_tracer.info("Got data: " + PSConvert.bytes2HexString(data));
+		_tracer.debug("Got data: " + PSConvert.bytes2HexString(data));
 		RoutingModel model = bytes2Model(data);
 		_tracer.info("Got RoutingModel: " + model.toString());
 		synchronized (_models) {
 			_models.put(model.getKey(), model);
+		}
+	}
+
+	@Override
+	public void onNodeClear() {
+		_tracer.info("Routing clear.");
+		synchronized (_models) {
+			_models.clear();
 		}
 	}
 }

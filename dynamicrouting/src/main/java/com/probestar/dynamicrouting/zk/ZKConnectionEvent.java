@@ -18,6 +18,8 @@ package com.probestar.dynamicrouting.zk;
 
 public interface ZKConnectionEvent {
 
+	void onNodeClear();
+
 	void onNodeChanged(byte[] data);
 
 }

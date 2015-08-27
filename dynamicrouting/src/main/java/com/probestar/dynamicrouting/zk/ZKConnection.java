@@ -85,7 +85,7 @@ public class ZKConnection implements Watcher {
 	}
 
 	public void createTemp(String key, byte[] data) throws InterruptedException {
-		create(key, data, CreateMode.EPHEMERAL);
+		create(key, data, CreateMode.EPHEMERAL_SEQUENTIAL);
 	}
 
 	private void create(String key, byte[] data, CreateMode mode) throws InterruptedException {
@@ -106,7 +106,7 @@ public class ZKConnection implements Watcher {
 	}
 
 	public List<String> list() throws Throwable {
-		return _zk.getChildren("/", null);
+		return _zk.getChildren("/", this);
 	}
 
 	public void set(String key, byte[] value) throws Throwable {
@@ -141,7 +141,8 @@ public class ZKConnection implements Watcher {
 	private List<ACL> createAclList(String userName, String password) throws NoSuchAlgorithmException {
 		List<ACL> list = new ArrayList<ACL>();
 		if (userName != null && password != null) {
-			Id id = new Id("digest", DigestAuthenticationProvider.generateDigest(String.format("%s:%s", userName, password)));
+			Id id = new Id("digest",
+					DigestAuthenticationProvider.generateDigest(String.format("%s:%s", userName, password)));
 			ACL acl = new ACL(ZooDefs.Perms.ALL, id);
 			list.add(acl);
 		}
@@ -161,6 +162,11 @@ public class ZKConnection implements Watcher {
 			fireNodeChanged(path);
 	}
 
+	private void fireNodeClear() {
+		for (ZKConnectionEvent event : _events)
+			event.onNodeClear();
+	}
+
 	@Override
 	public void process(WatchedEvent event) {
 		_tracer.info("Received Event: " + event.toString());
@@ -176,9 +182,9 @@ public class ZKConnection implements Watcher {
 					fireNodesChanged();
 					_zk.exists("/", this);
 					break;
-				case NodeDataChanged:
-					if (event.getPath().equalsIgnoreCase("/"))
-						fireNodesChanged();
+				case NodeChildrenChanged:
+					fireNodeClear();
+					fireNodesChanged();
 					_zk.exists("/", this);
 					break;
 				default:
