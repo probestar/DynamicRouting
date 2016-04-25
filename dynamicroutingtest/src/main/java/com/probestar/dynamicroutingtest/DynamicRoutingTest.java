@@ -34,8 +34,8 @@ public class DynamicRoutingTest {
 			String password = map.get("Password");
 
 			RoutingModel model = new RoutingModel();
-			model.setKey("probestar.3");
-			model.setUrl("ps://www.probestar.com/1");
+			model.setKey("probestar.2");
+			model.setUrl("ps://www.probestar.com/2");
 
 			DynamicRouting.initialize(conn, userName, password);
 			DynamicRouting.getInstance().register(model);
@@ -46,7 +46,7 @@ public class DynamicRoutingTest {
 					_tracer.info("Got nothing.");
 				else
 					_tracer.info("Got Routing: " + m.toString());
-				Thread.sleep(1000);
+				Thread.sleep(3000);
 			}
 		} catch (Throwable t) {
 			_tracer.error("DynamicRoutingTest.main error.", t);

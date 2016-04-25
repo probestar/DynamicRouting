@@ -32,7 +32,6 @@ import org.apache.zookeeper.data.ACL;
 import org.apache.zookeeper.data.Id;
 import org.apache.zookeeper.server.auth.DigestAuthenticationProvider;
 
-import com.probestar.psutils.PSConvert;
 import com.probestar.psutils.PSTracer;
 
 public class ZKConnection implements Watcher {
@@ -41,6 +40,7 @@ public class ZKConnection implements Watcher {
 	private String _conn;
 	private String _userName;
 	private String _password;
+	private boolean _newSession;
 	private ZooKeeper _zk;
 	private List<ACL> _acl;
 	private ArrayList<ZKConnectionEvent> _events;
@@ -50,6 +50,7 @@ public class ZKConnection implements Watcher {
 			_conn = conn;
 			_userName = userName;
 			_password = password;
+			_newSession = true;
 			_zk = createZooKeeper(_conn, _userName, _password);
 			_acl = createAclList(userName, password);
 			_events = new ArrayList<ZKConnectionEvent>();
@@ -80,24 +81,18 @@ public class ZKConnection implements Watcher {
 		}
 	}
 
-	public void create(String key, byte[] data) throws InterruptedException {
+	public void create(String key, byte[] data) throws InterruptedException, KeeperException {
 		create(key, data, CreateMode.PERSISTENT);
 	}
 
-	public void createTempSeq(String key, byte[] data) throws InterruptedException {
-		create(key, data, CreateMode.EPHEMERAL_SEQUENTIAL);
+	public void createTempSeq(String key, byte[] data) throws InterruptedException, KeeperException {
+		create(key, data, CreateMode.EPHEMERAL);
 	}
 
-	private void create(String key, byte[] data, CreateMode mode) throws InterruptedException {
+	private void create(String key, byte[] data, CreateMode mode) throws InterruptedException, KeeperException {
 		String path = getPath(key);
-		try {
-			if (!exists(key)) {
-				_zk.create(path, data, _acl, mode);
-				_tracer.info("Path %s has been created.", path);
-			}
-		} catch (KeeperException e) {
-			_tracer.error("ZKConnection.create error. key: " + key + "; data: " + PSConvert.bytes2HexString(data), e);
-		}
+		_zk.create(path, data, _acl, mode);
+		_tracer.info("Path %s has been created.", path);
 	}
 
 	public void delete(String key) throws InterruptedException, KeeperException {
@@ -106,7 +101,7 @@ public class ZKConnection implements Watcher {
 	}
 
 	public List<String> list() throws KeeperException, InterruptedException {
-		return _zk.getChildren("/", this);
+		return _zk.getChildren("/", false);
 	}
 
 	public void set(String key, byte[] value) throws Throwable {
@@ -141,8 +136,7 @@ public class ZKConnection implements Watcher {
 	private List<ACL> createAclList(String userName, String password) throws NoSuchAlgorithmException {
 		List<ACL> list = new ArrayList<ACL>();
 		if (userName != null && password != null) {
-			Id id = new Id("digest",
-					DigestAuthenticationProvider.generateDigest(String.format("%s:%s", userName, password)));
+			Id id = new Id("digest", DigestAuthenticationProvider.generateDigest(String.format("%s:%s", userName, password)));
 			ACL acl = new ACL(ZooDefs.Perms.ALL, id);
 			list.add(acl);
 		}
@@ -157,9 +151,9 @@ public class ZKConnection implements Watcher {
 			fireDataChanged(path);
 	}
 
-	private void fireConnected() {
+	private void fireConnected(boolean newSession) {
 		for (ZKConnectionEvent event : _events)
-			event.onConnected();
+			event.onConnected(newSession);
 	}
 
 	private void fireDisconnected() {
@@ -175,7 +169,20 @@ public class ZKConnection implements Watcher {
 	private void fireDataChanged(String path) throws KeeperException, InterruptedException {
 		byte[] data = get(path);
 		for (ZKConnectionEvent event : _events)
-			event.onDataChanged(data);
+			event.onDataChanged(path, data);
+	}
+
+	private void fireDataRemoved(String key) {
+		for (ZKConnectionEvent event : _events)
+			event.onDataRemoved(key);
+	}
+
+	private void continued(String path) throws KeeperException, InterruptedException {
+		if (path == null)
+			path = "/";
+		List<String> children = _zk.getChildren(path, true);
+		for (String child : children)
+			_zk.exists(path + child, true);
 	}
 
 	@Override
@@ -184,17 +191,24 @@ public class ZKConnection implements Watcher {
 		try {
 			switch (event.getState()) {
 			case Expired:
+				_newSession = true;
 				_zk.close();
 				_zk = createZooKeeper(_conn, _userName, _password);
 				break;
 			case SyncConnected:
 				switch (event.getType()) {
 				case None:
-					list();
-					fireConnected();
+					continued("/");
+					fireConnected(_newSession);
+					_newSession = false;
 					break;
 				case NodeChildrenChanged:
+					continued(event.getPath());
 					fireDataChanged();
+					break;
+				case NodeDeleted:
+					continued("/");
+					fireDataRemoved(event.getPath());
 					break;
 				default:
 					_tracer.error("Unhandled Event: " + event.toString());
